@@ -28,4 +28,4 @@ python main.py
 ## Next step in terminal with examples
 All files saving in directory with code in the another directory with tags (like project - main.py {your tags} )
 
-# Btw im not english, i only learn it :P 
+# Btw im not english, i only learning it :P 
