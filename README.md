@@ -14,6 +14,7 @@ or
 ```
 venv\Scripts\activate.bat (In cmd)
 ```
+# ________________________
 ```
 python main.py
 ```
