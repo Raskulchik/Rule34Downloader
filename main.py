@@ -1,10 +1,13 @@
 import os
+import sys
+import platform
 import aiohttp
 import asyncio
 import random
+import argparse
 from aiohttp import ClientSession
 from urllib.parse import quote
-from tqdm.asyncio import tqdm_asyncio  # Progress bar
+from tqdm.asyncio import tqdm_asyncio
 
 MAX_CONNECTIONS = 5
 RETRY_LIMIT = 5
@@ -14,6 +17,7 @@ PAGE_SIZE = 100  # Number of posts per API request
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:115.0) Gecko/20100101 Firefox/115.0"
 }
+
 
 def parse_tags_input(raw_tags: str) -> str:
     tags = raw_tags.strip().split()
@@ -30,7 +34,7 @@ async def fetch_with_retries(session, url, retries=RETRY_LIMIT):
     for attempt in range(1, retries + 1):
         try:
             async with session.get(url, headers=HEADERS) as resp:
-                if resp.status in [429, 503]:
+                if resp.status in (429, 503):
                     print(f"Error {resp.status}, retry {attempt}")
                     await asyncio.sleep(5 * attempt)
                     continue
@@ -50,7 +54,7 @@ async def download_file(session: ClientSession, url: str, filepath: str):
         try:
             await asyncio.sleep(random.uniform(1.5, 3.0))
             async with session.get(url, headers=HEADERS) as resp:
-                if resp.status in [429, 503]:
+                if resp.status in (429, 503):
                     print(f"Error {resp.status}, retry {attempt}")
                     await asyncio.sleep(5 * attempt)
                     continue
@@ -72,9 +76,18 @@ async def download_file(session: ClientSession, url: str, filepath: str):
 
 
 async def download_all(posts, folder):
-    os.makedirs(folder, exist_ok=True)
-    sem = asyncio.Semaphore(MAX_CONNECTIONS)
+    # Попытаться создать папку, при отказе — в домашней директории
+    try:
+        os.makedirs(folder, exist_ok=True)
+    except PermissionError:
+        print(f"⚠️  Не удалось создать папку «{folder}» — отказано в доступе.")
+        home = os.path.expanduser("~")
+        fallback = os.path.join(home, os.path.basename(folder))
+        print(f"👉  Будем сохранять в «{fallback}».")
+        folder = fallback
+        os.makedirs(folder, exist_ok=True)
 
+    sem = asyncio.Semaphore(MAX_CONNECTIONS)
     async with aiohttp.ClientSession() as session:
         async def bound_download(post):
             file_url = post.get("file_url")
@@ -89,7 +102,12 @@ async def download_all(posts, folder):
             async with sem:
                 await download_file(session, file_url, filepath)
 
-        await tqdm_asyncio.gather(*(bound_download(post) for post in posts), desc="Downloading")
+        await tqdm_asyncio.gather(
+            *(bound_download(post) for post in posts),
+            desc="Downloading",
+            total=len(posts),
+            leave=True
+        )
 
 
 async def fetch_posts(tags: str):
@@ -116,10 +134,31 @@ async def fetch_posts(tags: str):
     return all_posts
 
 
+def default_downloads_dir() -> str:
+    home = os.path.expanduser("~")
+    system = platform.system().lower()
+    if "windows" in system:
+        return os.path.join(os.environ.get("USERPROFILE", home), "Downloads")
+    else:
+        return os.path.join(home, "Downloads")
+
+
 async def main():
+    parser = argparse.ArgumentParser(description="Rule34 Downloader")
+    parser.add_argument(
+        "-o", "--output-dir",
+        help="Куда сохранять скачанные файлы (по умолчанию — папка «Downloads»).",
+        default=default_downloads_dir()
+    )
+    args = parser.parse_args()
+
     raw_tags = input("Any tags? (example: Miyabi -ai_generated): ")
     tag_folder_name = raw_tags.replace(" ", "_")
     tag_string = parse_tags_input(raw_tags)
+
+    base_dir = os.path.abspath(args.output_dir)
+    os.makedirs(base_dir, exist_ok=True)
+    download_folder = os.path.join(base_dir, tag_folder_name)
 
     posts = await fetch_posts(tag_string)
     if not posts:
@@ -139,7 +178,7 @@ async def main():
     print("Starting download...\n")
     for i in range(0, len(posts), DOWNLOAD_CHUNK_SIZE):
         chunk = posts[i:i + DOWNLOAD_CHUNK_SIZE]
-        await download_all(chunk, tag_folder_name)
+        await download_all(chunk, download_folder)
         await asyncio.sleep(random.uniform(10, 20))
 
     print("\n✅ Download complete!")
