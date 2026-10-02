@@ -2,10 +2,21 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
 import pytest
+
+_IS_WINDOWS = os.name == "nt"
+_IS_ROOT = hasattr(os, "geteuid") and os.geteuid() == 0
+
+#: chmod cannot deny writes on Windows, so permission-based tests are
+#: POSIX-only. ``os.geteuid`` does not exist there at all.
+requires_posix_permissions = pytest.mark.skipif(
+    _IS_WINDOWS or _IS_ROOT,
+    reason="POSIX permission bits required (not Windows, not root)",
+)
 
 _SRC = Path(__file__).resolve().parents[1] / "src"
 if str(_SRC) not in sys.path:

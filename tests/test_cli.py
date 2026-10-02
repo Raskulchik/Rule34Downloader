@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import io
-from pathlib import Path
 
 import pytest
 
@@ -30,8 +29,8 @@ class TestParser:
     def test_negated_tag_survives_the_shell(self):
         assert parse("-t", "cute -ai").tags == "cute -ai"
 
-    def test_output_dir_is_a_path(self):
-        assert isinstance(parse("-o", "/tmp/x").output_dir, Path)
+    def test_output_dir_is_a_path(self, tmp_path):
+        assert parse("-o", str(tmp_path)).output_dir == tmp_path
 
     def test_limit(self):
         assert parse("-n", "12").limit == 12

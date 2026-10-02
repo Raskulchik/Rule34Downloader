@@ -19,6 +19,13 @@ MAX_FILENAME_LENGTH = 200
 #: Byte length to stay under on FAT/exFAT volumes (255 bytes, but multi-byte
 #: UTF-8 characters expand).
 MAX_FILENAME_BYTES = 240
+#: Windows still caps most paths at 260 characters unless long-path support is
+#: enabled in the registry, and the cap covers the *whole* path - the drive, the
+#: tag subfolder and the separator all count against it. The headroom below also
+#: leaves space for the numeric suffix that collision handling appends.
+MAX_PATH_LENGTH = 240
+#: Never shorten a name to less than this, so files stay recognisable.
+MIN_STEM_LENGTH = 8
 
 _UNSAFE_RE = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 _WS_RE = re.compile(r"\s+")
@@ -107,6 +114,43 @@ def filename_for(url: str, fallback_id: str, declared_ext: str | None = None) ->
     return sanitize_component(f"{fallback_id or stem}{declared}")
 
 
+def fit_to_directory(directory: Path, filename: str) -> str:
+    """Shorten ``filename`` until ``directory / filename`` fits the path budget.
+
+    ``sanitize_component`` bounds a name on its own, but Windows applies its
+    limit to the whole path. A legal 200-character name inside a deep tag folder
+    can still exceed ``MAX_PATH``.
+
+    Args:
+        directory: The destination directory the name will live in.
+        filename: A name that already passed :func:`sanitize_component`.
+
+    Returns:
+        The name unchanged when it already fits, otherwise a shortened version
+        that keeps the extension and as much of the stem as will fit.
+
+    Raises:
+        StorageError: if the directory alone leaves no usable room for a name.
+    """
+    if len(str(directory / filename)) <= MAX_PATH_LENGTH and (
+        len(filename.encode("utf-8")) <= MAX_FILENAME_BYTES
+    ):
+        return filename
+
+    room = MAX_PATH_LENGTH - len(str(directory)) - 1  # for the separator
+    if room < MIN_STEM_LENGTH + 4:
+        raise StorageError(f"destination path is too long for a filename: {directory}")
+
+    stem, ext = _split_ext(filename)
+    trimmed = stem[: max(MIN_STEM_LENGTH, room - len(ext))].rstrip("_. ")
+    while trimmed and (
+        len(str(directory / (trimmed + ext))) > MAX_PATH_LENGTH
+        or len((trimmed + ext).encode("utf-8")) > MAX_FILENAME_BYTES
+    ):
+        trimmed = trimmed[:-1].rstrip("_. ")
+    return f"{trimmed or stem[:1]}{ext}"
+
+
 def unique_path(directory: Path, filename: str, *, avoid: Collection[Path] = frozenset()) -> Path:
     """Return a path inside ``directory`` that collides with nothing.
 
@@ -120,6 +164,7 @@ def unique_path(directory: Path, filename: str, *, avoid: Collection[Path] = fro
             downloads need this: a name merely *reserved* by another coroutine
             does not exist on the filesystem yet.
     """
+    filename = fit_to_directory(directory, filename)
     candidate = directory / filename
     if not candidate.exists() and candidate not in avoid:
         return candidate

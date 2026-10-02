@@ -4,7 +4,14 @@ from __future__ import annotations
 
 import pytest
 
-from r34dl.naming import filename_for, sanitize_component, unique_path
+from r34dl.errors import StorageError
+from r34dl.naming import (
+    MAX_PATH_LENGTH,
+    filename_for,
+    fit_to_directory,
+    sanitize_component,
+    unique_path,
+)
 
 CDN = "https://r34i.paheal-cdn.net/89/e1/89e109021ec0a151f3fbe17d767b2527"
 
@@ -79,3 +86,37 @@ class TestUniquePath:
         for index in range(3):
             (tmp_path / f"a{'' if index == 0 else f'_{index}'}.png").write_bytes(b"x")
         assert unique_path(tmp_path, "a.png").name == "a_3.png"
+
+class TestFitToDirectory:
+    """Windows caps the whole path at 260 chars, not just the name."""
+
+    def test_short_name_is_untouched(self, tmp_path):
+        assert fit_to_directory(tmp_path, "a.png") == "a.png"
+
+    def test_long_name_in_deep_directory_is_shortened(self, tmp_path):
+        deep = tmp_path.joinpath(*["d" * 40] * 4)
+        name = fit_to_directory(deep, f"{'n' * 200}.png")
+        assert len(str(deep / name)) <= MAX_PATH_LENGTH
+        assert name.endswith(".png")
+
+    def test_shortened_name_stays_under_the_byte_budget_too(self, tmp_path):
+        deep = tmp_path.joinpath(*["d" * 40] * 4)
+        name = fit_to_directory(deep, f"{'ы' * 200}.png")
+        assert len(name.encode("utf-8")) <= 240
+        assert len(str(deep / name)) <= MAX_PATH_LENGTH
+
+    def test_stem_is_kept_readable(self, tmp_path):
+        deep = tmp_path.joinpath(*["d" * 40] * 4)
+        name = fit_to_directory(deep, f"{'n' * 200}.jpg")
+        assert name.count("n") >= 8
+
+    def test_directory_with_no_room_raises(self, tmp_path):
+        absurd = tmp_path / ("d" * MAX_PATH_LENGTH)
+        with pytest.raises(StorageError, match="too long"):
+            fit_to_directory(absurd, "a.png")
+
+    def test_unique_path_applies_the_clamp(self, tmp_path):
+        deep = tmp_path.joinpath(*["d" * 40] * 4)
+        deep.mkdir(parents=True)
+        result = unique_path(deep, f"{'n' * 200}.png")
+        assert len(str(result)) <= MAX_PATH_LENGTH

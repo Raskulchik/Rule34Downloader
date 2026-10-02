@@ -12,6 +12,7 @@ from r34dl.errors import DownloadError, SourceUnavailableError, StorageError
 from r34dl.models import Outcome, Post
 from r34dl.net.client import HttpClient
 
+from .conftest import requires_posix_permissions
 from .helpers import make_post
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 512
@@ -233,6 +234,7 @@ class TestProgress:
 
 
 class TestStorageErrors:
+    @requires_posix_permissions
     async def test_unwritable_directory_is_reported(self, tmp_path):
         blocked = tmp_path / "blocked"
         blocked.mkdir()

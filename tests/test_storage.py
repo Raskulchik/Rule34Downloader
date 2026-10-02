@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import stat
 
 import pytest
 
 from r34dl.errors import StorageError
 from r34dl.storage import OutputLayout, atomic_write, atomic_write_async
+
+from .conftest import requires_posix_permissions
 
 
 class TestOutputLayout:
@@ -22,6 +23,7 @@ class TestOutputLayout:
         OutputLayout(tmp_path, "cute").resolve()
         assert OutputLayout(tmp_path, "cute").resolve() == tmp_path / "cute"
 
+    @requires_posix_permissions
     def test_falls_back_when_base_is_unusable(self, tmp_path):
         """A read-only base directory must not be fatal."""
         blocked = tmp_path / "blocked"
@@ -166,7 +168,7 @@ class TestAtomicWriteAsync:
         assert [p.name for p in tmp_path.iterdir()] == []
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason="root ignores directory permissions")
+@requires_posix_permissions
 class TestPermissions:
     def test_unwritable_directory_raises(self, tmp_path):
         blocked = tmp_path / "ro"
