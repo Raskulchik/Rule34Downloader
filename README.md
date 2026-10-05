@@ -1,6 +1,6 @@
 # Rule34Downloader
 
-Ru Version - https://github.com/Raskulchik/Rule34Downloader/blob/main/readmeru.md
+(Ru Version)[https://github.com/Raskulchik/Rule34Downloader/blob/main/readmeru.md]
 
 A small, polite tag downloader for rule34. Search by tags, save to a folder,
 skip what you already have.
